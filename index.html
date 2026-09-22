@@ -128,7 +128,7 @@
     <label class="fileLabel">上传教师任教年限表
       <input id="teacherFile" type="file" accept=".xlsx,.xls,.csv">
     </label>
-    <button id="setupBtn" class="secondary">多人在线设置</button>
+    <button id="setupBtn" class="secondary" style="display:none">多人在线设置</button>
     <button id="printBtn" class="secondary">打印 / 导出PDF</button>
     <button id="clearBtn" class="danger">清空本周本年级</button>
   </div>
@@ -194,6 +194,12 @@
 </div>
 
 <script>
+const FIXED_SUPABASE_URL = 'https://ibqeobupbxhbcozeyxhb.supabase.co';
+const FIXED_SUPABASE_KEY = 'sb_publishable_puWVskeQD1Lv1BPLAwJ1_w_BAzhoIqf';
+// 固定云端配置：所有打开本网页的设备自动连接同一个 Supabase 项目。
+localStorage.setItem("ai_sb_url", FIXED_SUPABASE_URL);
+localStorage.setItem("ai_sb_key", FIXED_SUPABASE_KEY);
+
 const GRADES=["2024级","2025级","2026级"];
 const PERIODS=8;
 const DAYS=5;
@@ -279,9 +285,8 @@ function localSaveHead(el){
 }
 
 async function connect(){
-  const url=localStorage.getItem("ai_sb_url"), key=localStorage.getItem("ai_sb_key");
-  if(!url||!key){setStatus(false,"本地模式");return;}
-  setStatus(false,"正在连接云端…");
+  const url=FIXED_SUPABASE_URL, key=FIXED_SUPABASE_KEY;
+  setStatus(false,"正在连接多人云端…");
   try{
     sb=window.supabase.createClient(url,key,{auth:{persistSession:false}});
     const test=await sb.from("schedule_cells").select("grade").limit(1);
@@ -290,8 +295,8 @@ async function connect(){
     subscribeRemote();
     setStatus(true,"多人实时同步已连接");
   }catch(e){
-    console.error(e); sb=null; setStatus(false,"云端连接失败 · 当前为本地模式");
-    setTimeout(()=>alert("在线模式连接失败\n\n"+e.message+"\n\n请确认：\n1. Supabase URL 和 anon key 正确；\n2. 已在 Supabase SQL Editor 执行 supabase_setup.sql；\n3. 浏览器网络可以访问 Supabase。\n\n如果数据库表还没建立，这是最常见原因。"),100);
+    console.error(e); sb=null; setStatus(false,"云端连接失败");
+    setTimeout(()=>alert("多人在线连接失败\n\n"+e.message+"\n\n请确认：\n1. Supabase URL 和 anon key 正确；\n2. 已在 Supabase SQL Editor 执行 supabase_setup.sql；\n3. 浏览器网络可以访问 Supabase。\n\n如果数据库表还没建立，这是最常见原因。"),100);
   }
 }
 function setStatus(ok,text){$("#statusDot").classList.toggle("online",ok);$("#statusText").textContent=text;}
@@ -494,7 +499,6 @@ $("#clearBtn").onclick=async()=>{
   refreshMonitor();
 };
 
-localLoad();
 connect();
 </script>
 </body>
