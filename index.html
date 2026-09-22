@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI循证录课（移动设备）排课表</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root{
+      --bg:#f5f7fb;--panel:#fff;--ink:#182230;--muted:#687386;--line:#cbd3df;
+      --accent:#315efb;--accent2:#eef3ff;--ok:#18864b;--warn:#b96a00;--bad:#c73535;
+      --shadow:0 10px 30px rgba(20,40,80,.08)
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;background:var(--bg);color:var(--ink)}
+    .app{max-width:1520px;margin:0 auto;padding:20px}
+    .top{
+      display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;
+      margin-bottom:14px
+    }
+    h1{margin:0;font-size:28px;letter-spacing:1px}
+    .sub{margin-top:6px;color:var(--muted);font-size:13px}
+    .status{
+      display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid #dce2eb;
+      background:#fff;border-radius:999px;font-size:13px;box-shadow:var(--shadow)
+    }
+    .dot{width:9px;height:9px;border-radius:50%;background:#9aa5b1}
+    .dot.online{background:#20a464;box-shadow:0 0 0 4px rgba(32,164,100,.12)}
+    .toolbar,.card{
+      background:var(--panel);border:1px solid #e1e6ef;border-radius:14px;box-shadow:var(--shadow)
+    }
+    .toolbar{padding:14px;margin-bottom:14px;display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+    label{font-size:12px;color:var(--muted);display:block;margin-bottom:5px}
+    select,input[type="date"],input[type="text"],input[type="number"]{
+      height:38px;border:1px solid #ccd4df;border-radius:8px;padding:0 10px;background:#fff;color:var(--ink)
+    }
+    select{min-width:125px}
+    button,.btn{
+      height:38px;border:0;border-radius:8px;padding:0 14px;font-weight:600;cursor:pointer
+    }
+    .primary{background:var(--accent);color:#fff}
+    .secondary{background:#edf1f6;color:#273244}
+    .danger{background:#fff0f0;color:#b32626;border:1px solid #ffd0d0}
+    .fileLabel{
+      height:38px;display:inline-flex;align-items:center;border-radius:8px;padding:0 14px;background:#edf1f6;
+      font-weight:600;cursor:pointer;color:#273244
+    }
+    .fileLabel input{display:none}
+    .layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:14px}
+    .scheduleCard{overflow:hidden}
+    .tableWrap{overflow:auto}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;min-width:980px}
+    th,td{border:1px solid #7d8794;text-align:center}
+    thead th{background:#f9fbfe;height:58px;font-size:15px}
+    .periodCol{width:74px;background:#f6f8fb;font-weight:700}
+    .dayHead{position:relative}
+    .dayEdit{
+      width:100%;height:56px;border:0;background:transparent;text-align:center;font-weight:700;font-size:15px;
+      outline:none
+    }
+    tbody td{height:110px;padding:0;background:#fff;vertical-align:top}
+    .cellEditor{
+      width:100%;height:108px;border:0;resize:none;outline:none;padding:8px 9px;line-height:1.55;
+      font-family:inherit;font-size:13px;background:transparent
+    }
+    .cellEditor:focus{background:#fbfdff;box-shadow:inset 0 0 0 2px #8aa8ff}
+    .cellEditor.over{background:#fff2f2}
+    .hintline{padding:10px 13px;border-top:1px solid #e7ebf1;color:var(--muted);font-size:12px}
+    .right{display:flex;flex-direction:column;gap:14px}
+    .card{padding:15px}
+    .card h2{font-size:16px;margin:0 0 10px}
+    .small{font-size:12px;color:var(--muted);line-height:1.6}
+    .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+    .metric{background:#f6f8fc;border-radius:10px;padding:9px;text-align:center}
+    .metric b{display:block;font-size:20px}
+    .metric span{font-size:11px;color:var(--muted)}
+    .warnList{display:flex;flex-direction:column;gap:8px;max-height:480px;overflow:auto}
+    .person{
+      border:1px solid #e2e7ef;border-radius:10px;padding:9px 10px;background:#fff
+    }
+    .person .row{display:flex;justify-content:space-between;gap:8px;align-items:center}
+    .badge{font-size:11px;border-radius:999px;padding:3px 7px}
+    .badge.bad{background:#fff0f0;color:var(--bad)}
+    .badge.warn{background:#fff5e8;color:var(--warn)}
+    .badge.ok{background:#eaf8f0;color:var(--ok)}
+    .empty{padding:14px;border:1px dashed #ccd4df;border-radius:10px;color:var(--muted);text-align:center}
+    .modal{
+      position:fixed;inset:0;background:rgba(20,28,40,.45);display:none;align-items:center;justify-content:center;padding:20px;z-index:20
+    }
+    .modal.show{display:flex}
+    .dialog{width:min(720px,100%);max-height:90vh;overflow:auto;background:#fff;border-radius:16px;padding:20px;box-shadow:0 25px 70px rgba(0,0,0,.22)}
+    .dialog h2{margin-top:0}
+    .formgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .formgrid input{width:100%}
+    pre{
+      white-space:pre-wrap;background:#111827;color:#e5e7eb;border-radius:10px;padding:12px;font-size:12px;overflow:auto
+    }
+    .footerNote{font-size:11px;color:#7a8494;margin-top:12px}
+    @media(max-width:1050px){.layout{grid-template-columns:1fr}.right{display:grid;grid-template-columns:1fr 1fr}}
+    @media(max-width:720px){.app{padding:10px}.right{grid-template-columns:1fr}.formgrid{grid-template-columns:1fr}h1{font-size:22px}}
+    @media print{
+      .toolbar,.right,.status,.hintline{display:none!important}.app{padding:0;max-width:none}.layout{display:block}.scheduleCard{box-shadow:none;border:0}
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <div>
+      <h1>AI循证录课（移动设备）排课表</h1>
+      <div class="sub">周一至周五 · 每天8节 · 每节最多5位教师 · 自动监测录课任务完成情况</div>
+    </div>
+    <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">本地模式</span></div>
+  </div>
+
+  <div class="toolbar">
+    <div>
+      <label>任教年级</label>
+      <select id="gradeSelect">
+        <option>2024级</option><option>2025级</option><option selected>2026级</option>
+      </select>
+    </div>
+    <div>
+      <label>本周周一</label>
+      <input id="weekStart" type="date">
+    </div>
+    <label class="fileLabel">上传教师任教年限表
+      <input id="teacherFile" type="file" accept=".xlsx,.xls,.csv">
+    </label>
+    <button id="setupBtn" class="secondary">多人在线设置</button>
+    <button id="printBtn" class="secondary">打印 / 导出PDF</button>
+    <button id="clearBtn" class="danger">清空本周本年级</button>
+  </div>
+
+  <div class="layout">
+    <div class="card scheduleCard">
+      <div class="tableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="periodCol">节次</th>
+              <th class="dayHead"><input class="dayEdit" data-day="0" value="星期一"></th>
+              <th class="dayHead"><input class="dayEdit" data-day="1" value="星期二"></th>
+              <th class="dayHead"><input class="dayEdit" data-day="2" value="星期三"></th>
+              <th class="dayHead"><input class="dayEdit" data-day="3" value="星期四"></th>
+              <th class="dayHead"><input class="dayEdit" data-day="4" value="星期五"></th>
+            </tr>
+          </thead>
+          <tbody id="scheduleBody"></tbody>
+        </table>
+      </div>
+      <div class="hintline">
+        填写格式：<b>20xx级x班+姓名+学科</b>；一位教师一行，每个节次最多5行。示例：2026级8班+张老师+物理
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="card">
+        <h2>本年级录课监测</h2>
+        <div class="summary">
+          <div class="metric"><b id="teacherCount">0</b><span>教师数</span></div>
+          <div class="metric"><b id="doneCount">0</b><span>已达标</span></div>
+          <div class="metric"><b id="needCount">0</b><span>未达标</span></div>
+        </div>
+        <div id="warnList" class="warnList"><div class="empty">请先上传教师任教年限表</div></div>
+      </div>
+      <div class="card">
+        <h2>教师表格式</h2>
+        <div class="small">
+          Excel/CSV 首行建议包含：<b>姓名、任教年级、任教年限</b>。系统也兼容“教师姓名 / 年级 / 教龄”等常见列名。<br><br>
+          规则：任教 ≤1 年按新入职教师，每周2节；2–5年每周1节；≥6年按连续两周合计1节。
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="setupModal" class="modal">
+  <div class="dialog">
+    <h2>多人在线实时编辑设置</h2>
+    <p class="small">填写你自己的 Supabase 项目地址和 anon key 后，本页会把课表、星期标题和教师名单实时同步到云端。配置会保存在当前浏览器。</p>
+    <div class="formgrid">
+      <div><label>Supabase Project URL</label><input id="sbUrl" type="text" placeholder="https://xxxx.supabase.co"></div>
+      <div><label>Supabase anon key</label><input id="sbKey" type="text" placeholder="eyJ..."></div>
+    </div>
+    <p class="small">首次使用请在 Supabase → SQL Editor 执行随网页附带的 <b>supabase_setup.sql</b>。</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button id="localBtn" class="secondary">仅使用本地模式</button>
+      <button id="closeSetup" class="secondary">取消</button>
+      <button id="testSetup" class="secondary">测试连接</button><button id="saveSetup" class="primary">保存并切换在线模式</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const GRADES=["2024级","2025级","2026级"];
+const PERIODS=8;
+const DAYS=5;
+const $=s=>document.querySelector(s);
+const $$=s=>[...document.querySelectorAll(s)];
+let sb=null, channel=null, applyingRemote=false, saveTimers={};
+let teachers=[];
+const clientId=(crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2));
+
+function mondayISO(d=new Date()){
+  const x=new Date(d); const day=x.getDay()||7; x.setDate(x.getDate()-day+1);
+  const y=x.getFullYear(),m=String(x.getMonth()+1).padStart(2,"0"),dd=String(x.getDate()).padStart(2,"0");
+  return `${y}-${m}-${dd}`;
+}
+$("#weekStart").value=mondayISO();
+
+function keyBase(){return `${$("#gradeSelect").value}|${$("#weekStart").value}`;}
+function localKey(s){return `ai_lesson_${s}`;}
+function parseLines(v){return v.split(/\n+/).map(x=>x.trim()).filter(Boolean).slice(0,5);}
+function normalizeCell(v){return parseLines(v).join("\n");}
+function isoWeekInfo(dateStr){
+  const d=new Date(dateStr+"T12:00:00");
+  const tmp=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  const day=tmp.getUTCDay()||7; tmp.setUTCDate(tmp.getUTCDate()+4-day);
+  const yearStart=new Date(Date.UTC(tmp.getUTCFullYear(),0,1));
+  const week=Math.ceil((((tmp-yearStart)/86400000)+1)/7);
+  return {year:tmp.getUTCFullYear(),week};
+}
+function twoWeekStart(dateStr){
+  const d=new Date(dateStr+"T12:00:00"); const info=isoWeekInfo(dateStr);
+  if(info.week%2===0) d.setDate(d.getDate()-7);
+  return mondayISO(d);
+}
+function nextWeek(dateStr){const d=new Date(dateStr+"T12:00:00");d.setDate(d.getDate()+7);return mondayISO(d);}
+
+function buildGrid(){
+  let h="";
+  for(let p=1;p<=PERIODS;p++){
+    h+=`<tr><th class="periodCol">第${p}节</th>`;
+    for(let d=0;d<DAYS;d++){
+      h+=`<td><textarea class="cellEditor" data-day="${d}" data-period="${p}" placeholder="20xx级x班+姓名+学科"></textarea></td>`;
+    }
+    h+="</tr>";
+  }
+  $("#scheduleBody").innerHTML=h;
+  $$(".cellEditor").forEach(el=>{
+    el.addEventListener("input",()=>{
+      const lines=el.value.split(/\n/);
+      if(lines.length>5){
+        const pos=el.selectionStart; el.value=lines.slice(0,5).join("\n"); el.classList.add("over");
+        setTimeout(()=>el.classList.remove("over"),600); el.setSelectionRange(Math.min(pos,el.value.length),Math.min(pos,el.value.length));
+      }
+      scheduleSaveCell(el);
+      refreshMonitor();
+    });
+    el.addEventListener("blur",()=>{el.value=normalizeCell(el.value);scheduleSaveCell(el);refreshMonitor();});
+  });
+}
+buildGrid();
+
+function localLoad(){
+  const base=keyBase();
+  const data=JSON.parse(localStorage.getItem(localKey("schedule"))||"{}");
+  $$(".cellEditor").forEach(el=>{
+    const k=`${base}|${el.dataset.day}|${el.dataset.period}`;
+    el.value=data[k]||"";
+  });
+  const heads=JSON.parse(localStorage.getItem(localKey("dayheads"))||"{}");
+  $$(".dayEdit").forEach(el=>el.value=heads[`${base}|${el.dataset.day}`]||["星期一","星期二","星期三","星期四","星期五"][el.dataset.day]);
+  const roster=JSON.parse(localStorage.getItem(localKey("teachers"))||"[]");
+  teachers=roster;
+  refreshMonitor();
+}
+function localSaveCell(el){
+  const data=JSON.parse(localStorage.getItem(localKey("schedule"))||"{}");
+  data[`${keyBase()}|${el.dataset.day}|${el.dataset.period}`]=normalizeCell(el.value);
+  localStorage.setItem(localKey("schedule"),JSON.stringify(data));
+}
+function localSaveHead(el){
+  const data=JSON.parse(localStorage.getItem(localKey("dayheads"))||"{}");
+  data[`${keyBase()}|${el.dataset.day}`]=el.value;
+  localStorage.setItem(localKey("dayheads"),JSON.stringify(data));
+}
+
+async function connect(){
+  const url=localStorage.getItem("ai_sb_url"), key=localStorage.getItem("ai_sb_key");
+  if(!url||!key){setStatus(false,"本地模式");return;}
+  setStatus(false,"正在连接云端…");
+  try{
+    sb=window.supabase.createClient(url,key,{auth:{persistSession:false}});
+    const test=await sb.from("schedule_cells").select("grade").limit(1);
+    if(test.error) throw new Error("数据库连接测试失败："+test.error.message);
+    await loadRemote();
+    subscribeRemote();
+    setStatus(true,"多人实时同步已连接");
+  }catch(e){
+    console.error(e); sb=null; setStatus(false,"云端连接失败 · 当前为本地模式");
+    setTimeout(()=>alert("在线模式连接失败\n\n"+e.message+"\n\n请确认：\n1. Supabase URL 和 anon key 正确；\n2. 已在 Supabase SQL Editor 执行 supabase_setup.sql；\n3. 浏览器网络可以访问 Supabase。\n\n如果数据库表还没建立，这是最常见原因。"),100);
+  }
+}
+function setStatus(ok,text){$("#statusDot").classList.toggle("online",ok);$("#statusText").textContent=text;}
+async function testSupabaseSettings(){
+  const url=$("#sbUrl").value.trim(), key=$("#sbKey").value.trim();
+  if(!url||!key){alert("请先填写 Supabase Project URL 和 anon key。");return;}
+  try{
+    const testClient=window.supabase.createClient(url,key,{auth:{persistSession:false}});
+    const {error}=await testClient.from("schedule_cells").select("grade").limit(1);
+    if(error) throw error;
+    alert("连接测试成功！数据库表可以访问。现在点击“保存并切换在线模式”即可。\n\n注意：如果其他老师也要实时编辑，需要所有人打开同一个网页网址。\n");
+  }catch(e){
+    alert("连接测试失败：\n\n"+e.message+"\n\n请优先检查是否已经执行 supabase_setup.sql，以及 URL/key 是否复制正确。");
+  }
+}
+
+async function loadRemote(){
+  if(!sb)return localLoad();
+  const grade=$("#gradeSelect").value, week=$("#weekStart").value;
+  const [{data:cells,error:e1},{data:heads,error:e2},{data:roster,error:e3}]=await Promise.all([
+    sb.from("schedule_cells").select("*").eq("grade",grade).eq("week_start",week),
+    sb.from("schedule_headers").select("*").eq("grade",grade).eq("week_start",week),
+    sb.from("teacher_roster").select("*")
+  ]);
+  if(e1||e2||e3)throw(e1||e2||e3);
+  applyingRemote=true;
+  $$(".cellEditor").forEach(el=>{
+    const r=(cells||[]).find(x=>x.day_index==+el.dataset.day && x.period==+el.dataset.period);
+    el.value=r?.content||"";
+  });
+  $$(".dayEdit").forEach(el=>{
+    const r=(heads||[]).find(x=>x.day_index==+el.dataset.day);
+    el.value=r?.label||["星期一","星期二","星期三","星期四","星期五"][el.dataset.day];
+  });
+  teachers=(roster||[]).map(x=>({name:x.name,grade:x.grade,years:+x.years}));
+  applyingRemote=false;
+  refreshMonitor();
+}
+function subscribeRemote(){
+  if(channel)sb.removeChannel(channel);
+  const grade=$("#gradeSelect").value, week=$("#weekStart").value;
+  channel=sb.channel(`schedule:${grade}:${week}:${clientId}`)
+    .on("postgres_changes",{event:"*",schema:"public",table:"schedule_cells",filter:`grade=eq.${grade}`},payload=>{
+      const r=payload.new||payload.old;if(!r||r.week_start!==week||r.updated_by===clientId)return;
+      const el=$(`.cellEditor[data-day="${r.day_index}"][data-period="${r.period}"]`);
+      if(el && document.activeElement!==el){applyingRemote=true;el.value=r.content||"";applyingRemote=false;refreshMonitor();}
+    })
+    .on("postgres_changes",{event:"*",schema:"public",table:"schedule_headers",filter:`grade=eq.${grade}`},payload=>{
+      const r=payload.new||payload.old;if(!r||r.week_start!==week||r.updated_by===clientId)return;
+      const el=$(`.dayEdit[data-day="${r.day_index}"]`);
+      if(el && document.activeElement!==el){applyingRemote=true;el.value=r.label||"";applyingRemote=false;}
+    })
+    .on("postgres_changes",{event:"*",schema:"public",table:"teacher_roster"},()=>loadRosterOnly())
+    .subscribe();
+}
+async function loadRosterOnly(){
+  if(!sb)return;
+  const {data}=await sb.from("teacher_roster").select("*");
+  teachers=(data||[]).map(x=>({name:x.name,grade:x.grade,years:+x.years}));
+  refreshMonitor();
+}
+
+function scheduleSaveCell(el){
+  if(applyingRemote)return;
+  const id=`${el.dataset.day}_${el.dataset.period}`;
+  clearTimeout(saveTimers[id]);
+  saveTimers[id]=setTimeout(()=>saveCell(el),450);
+}
+async function saveCell(el){
+  localSaveCell(el);
+  if(!sb)return;
+  const row={grade:$("#gradeSelect").value,week_start:$("#weekStart").value,day_index:+el.dataset.day,period:+el.dataset.period,content:normalizeCell(el.value),updated_by:clientId,updated_at:new Date().toISOString()};
+  const {error}=await sb.from("schedule_cells").upsert(row,{onConflict:"grade,week_start,day_index,period"});
+  if(error)console.error(error);
+}
+$$(".dayEdit").forEach(el=>el.addEventListener("input",()=>{
+  if(applyingRemote)return; clearTimeout(saveTimers["h"+el.dataset.day]);
+  saveTimers["h"+el.dataset.day]=setTimeout(()=>saveHead(el),400);
+}));
+async function saveHead(el){
+  localSaveHead(el); if(!sb)return;
+  const row={grade:$("#gradeSelect").value,week_start:$("#weekStart").value,day_index:+el.dataset.day,label:el.value,updated_by:clientId,updated_at:new Date().toISOString()};
+  const {error}=await sb.from("schedule_headers").upsert(row,{onConflict:"grade,week_start,day_index"});
+  if(error)console.error(error);
+}
+
+function extractTeacherNamesFromCurrentGrid(){
+  const names=[];
+  $$(".cellEditor").forEach(el=>parseLines(el.value).forEach(line=>{
+    const parts=line.split(/[+＋]/).map(x=>x.trim()).filter(Boolean);
+    if(parts.length>=2) names.push(parts[1]);
+  }));
+  return names;
+}
+async function countNamesForWeek(week){
+  const grade=$("#gradeSelect").value;
+  if(!sb){
+    const data=JSON.parse(localStorage.getItem(localKey("schedule"))||"{}");
+    const names=[];
+    Object.entries(data).forEach(([k,v])=>{
+      if(k.startsWith(`${grade}|${week}|`)) parseLines(v).forEach(line=>{
+        const p=line.split(/[+＋]/).map(x=>x.trim()).filter(Boolean);if(p.length>=2)names.push(p[1]);
+      });
+    });
+    return names;
+  }
+  const {data}=await sb.from("schedule_cells").select("content").eq("grade",grade).eq("week_start",week);
+  const names=[];(data||[]).forEach(r=>parseLines(r.content||"").forEach(line=>{
+    const p=line.split(/[+＋]/).map(x=>x.trim()).filter(Boolean);if(p.length>=2)names.push(p[1]);
+  })); return names;
+}
+let monitorToken=0;
+async function refreshMonitor(){
+  const token=++monitorToken;
+  const grade=$("#gradeSelect").value;
+  const roster=teachers.filter(t=>String(t.grade).trim()===grade);
+  $("#teacherCount").textContent=roster.length;
+  if(!roster.length){$("#doneCount").textContent="0";$("#needCount").textContent="0";$("#warnList").innerHTML='<div class="empty">当前年级暂无教师数据</div>';return;}
+  const currentNames=extractTeacherNamesFromCurrentGrid();
+  const biStart=twoWeekStart($("#weekStart").value), biOther=nextWeek(biStart);
+  let otherNames=[];
+  if($("#weekStart").value===biStart) otherNames=await countNamesForWeek(biOther);
+  else otherNames=await countNamesForWeek(biStart);
+  if(token!==monitorToken)return;
+  const c=n=>currentNames.filter(x=>x===n).length, c2=n=>c(n)+otherNames.filter(x=>x===n).length;
+  let done=0, html="";
+  roster.sort((a,b)=>a.years-b.years||a.name.localeCompare(b.name,"zh")).forEach(t=>{
+    const req=t.years<=1?2:1;
+    const actual=t.years>=6?c2(t.name):c(t.name);
+    const ok=actual>=req;if(ok)done++;
+    if(!ok){
+      const scope=t.years>=6?"本两周":"本周";
+      const text=actual===0?"尚未排课":`${scope}已排 ${actual} 节，还差 ${req-actual} 节`;
+      html+=`<div class="person"><div class="row"><b>${escapeHtml(t.name)}</b><span class="badge ${actual===0?"bad":"warn"}">${escapeHtml(text)}</span></div><div class="small">任教 ${t.years} 年 · 要求：${t.years<=1?"每周2节":t.years<=5?"每周1节":"每2周1节"}</div></div>`;
+    }
+  });
+  $("#doneCount").textContent=done; $("#needCount").textContent=roster.length-done;
+  $("#warnList").innerHTML=html||'<div class="empty">本年级所有教师均已达到录课要求 ✓</div>';
+}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+
+$("#teacherFile").addEventListener("change",async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{
+    const buf=await f.arrayBuffer(); const wb=XLSX.read(buf,{type:"array"}); const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{defval:""});
+    const pick=(o,names)=>{for(const n of names){if(n in o)return o[n]} return ""};
+    const parsed=rows.map(r=>{
+      const rawGrade=String(pick(r,["任教年级","年级","grade","Grade"])).trim();
+      const gradeNum=rawGrade.replace(/[^0-9]/g,"");
+      const grade=gradeNum ? gradeNum+"级" : rawGrade;
+      const rawYears=String(pick(r,["任教年限","教龄","任教年数","years","Years"])).trim();
+      const years=Number(rawYears.replace(/年/g,""));
+      return {
+        name:String(pick(r,["姓名","教师姓名","老师姓名","name","Name"])).trim(),
+        grade,
+        years
+      };
+    }).filter(x=>x.name&&GRADES.includes(x.grade)&&Number.isFinite(x.years));
+    if(!parsed.length){alert("未识别到有效教师数据。请确认列名包含：姓名、任教年级、任教年限。");return;}
+    teachers=parsed;localStorage.setItem(localKey("teachers"),JSON.stringify(teachers));
+    if(sb){
+      const rows2=parsed.map(x=>({name:x.name,grade:x.grade,years:x.years,updated_at:new Date().toISOString()}));
+      const {error}=await sb.from("teacher_roster").upsert(rows2,{onConflict:"name,grade"});
+      if(error)throw error;
+    }
+    refreshMonitor();alert(`已导入 ${parsed.length} 位教师。`);
+  }catch(err){console.error(err);alert("导入失败："+err.message);}
+  e.target.value="";
+});
+
+$("#gradeSelect").addEventListener("change",()=>reloadContext());
+$("#weekStart").addEventListener("change",()=>{
+  const v=$("#weekStart").value;if(v)$("#weekStart").value=mondayISO(new Date(v+"T12:00:00"));
+  reloadContext();
+});
+async function reloadContext(){if(sb){await loadRemote();subscribeRemote()}else localLoad();}
+
+$("#setupBtn").onclick=()=>{$("#sbUrl").value=localStorage.getItem("ai_sb_url")||"";$("#sbKey").value=localStorage.getItem("ai_sb_key")||"";$("#setupModal").classList.add("show")};
+$("#closeSetup").onclick=()=>$("#setupModal").classList.remove("show");
+$("#localBtn").onclick=()=>{localStorage.removeItem("ai_sb_url");localStorage.removeItem("ai_sb_key");location.reload()};
+$("#testSetup").onclick=testSupabaseSettings;
+$("#saveSetup").onclick=async()=>{
+  const u=$("#sbUrl").value.trim(),k=$("#sbKey").value.trim();
+  if(!u||!k){alert("请填写 Supabase URL 和 anon key");return}
+  try{
+    const testClient=window.supabase.createClient(u,k,{auth:{persistSession:false}});
+    const {error}=await testClient.from("schedule_cells").select("grade").limit(1);
+    if(error) throw error;
+    localStorage.setItem("ai_sb_url",u);localStorage.setItem("ai_sb_key",k);
+    $("#setupModal").classList.remove("show");
+    await connect();
+  }catch(e){alert("不能切换到在线模式：\n\n"+e.message+"\n\n请先修复连接问题，再保存。");}
+};
+$("#printBtn").onclick=()=>window.print();
+$("#clearBtn").onclick=async()=>{
+  if(!confirm(`确定清空 ${$("#gradeSelect").value} · ${$("#weekStart").value} 这一周的排课吗？`))return;
+  $$(".cellEditor").forEach(el=>{el.value="";localSaveCell(el)});
+  if(sb) await sb.from("schedule_cells").delete().eq("grade",$("#gradeSelect").value).eq("week_start",$("#weekStart").value);
+  refreshMonitor();
+};
+
+localLoad();
+connect();
+</script>
+</body>
+</html>
